@@ -1,0 +1,387 @@
+
+
+library(haven)
+library(dplyr)
+datos <- read_dta("C:/Users/Gothics/OneDrive/AI-Dani/dani_modelo2.dta")
+
+#######################################################
+##### Support Vector Machines with Linear Kernel
+#######################################################
+
+if (!requireNamespace("e1071", quietly = TRUE)) install.packages("e1071")
+if (!requireNamespace("caret", quietly = TRUE)) install.packages("caret")
+if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
+
+library(e1071)
+library(caret)
+library(dplyr)
+
+datos <- datos %>%
+  filter(!is.na(rwg06m) & rwg06m %in% c(0, 1))
+
+datos$rwg06m <- as.factor(datos$rwg06m)
+
+categoricas <- c("cesarea", "peginergrowth_2", "sexo", "escolaridad_2", "alim3m_2", "nse_2")
+datos[, categoricas] <- lapply(datos[, categoricas], as.factor)
+
+set.seed(123)
+trainIndex <- createDataPartition(datos$rwg06m, p = 0.8, list = FALSE)
+trainData <- datos[trainIndex, ]
+testData <- datos[-trainIndex, ]
+
+svm_model <- svm(rwg06m ~ cesarea + peginergrowth_2 + sexo + escolaridad_2 + alim3m_2 + nse_2 + 
+                     imcpregestacional + noembarazos + edadmaterna + se3m + sr3m + ef3m + fr3m,
+                 data = trainData, kernel = "linear", cost = 1)
+
+predicciones <- predict(svm_model, testData)
+
+if (length(predicciones) > 0) {
+  conf_matrix <- confusionMatrix(factor(predicciones), factor(testData$rwg06m))
+  print(conf_matrix)
+} else {
+  print("Error: No se generaron predicciones. Verifica la consistencia de testData.")
+}
+
+if (!requireNamespace("pROC", quietly = TRUE)) install.packages("pROC")
+if (!requireNamespace("caret", quietly = TRUE)) install.packages("caret")
+
+library(pROC)
+library(caret)
+
+conf_matrix <- confusionMatrix(factor(predicciones), factor(testData$rwg06m))
+
+accuracy <- conf_matrix$overall["Accuracy"]
+precision <- conf_matrix$byClass["Precision"]
+sensitivity <- conf_matrix$byClass["Sensitivity"]
+specificity <- conf_matrix$byClass["Specificity"]
+f1_score <- conf_matrix$byClass["F1"]
+
+roc_obj <- roc(testData$rwg06m, as.numeric(predicciones), levels = c(0, 1), direction = "<")
+auc_value <- auc(roc_obj)
+
+ci_auc <- ci.auc(roc_obj)
+ci_accuracy <- binom.test(conf_matrix$table[1,1] + conf_matrix$table[2,2], sum(conf_matrix$table))$conf.int
+ci_sensitivity <- binom.test(conf_matrix$table[2,2], sum(conf_matrix$table[2,]))$conf.int
+ci_specificity <- binom.test(conf_matrix$table[1,1], sum(conf_matrix$table[1,]))$conf.int
+
+results <- data.frame(
+  Metric = c("AUC", "Accuracy", "Precision", "Sensitivity", "Specificity", "F1 Score"),
+  Value = c(auc_value, accuracy, precision, sensitivity, specificity, f1_score),
+  CI_Lower = c(ci_auc[1], ci_accuracy[1], NA, ci_sensitivity[1], ci_specificity[1], NA),
+  CI_Upper = c(ci_auc[3], ci_accuracy[2], NA, ci_sensitivity[2], ci_specificity[2], NA)
+)
+
+print(results)
+
+coefs <- t(svm_model$coefs) %*% svm_model$SV
+print(coefs)
+
+
+if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
+library(ggplot2)
+
+coef_df <- data.frame(
+  Variable = colnames(coefs),
+  Coeficiente = as.numeric(coefs)
+)
+
+coef_df$Importancia <- abs(coef_df$Coeficiente)
+coef_df <- coef_df[order(coef_df$Importancia, decreasing = TRUE), ]
+
+ggplot(coef_df, aes(x = reorder(Variable, Importancia), y = Coeficiente, fill = Coeficiente > 0)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("red", "blue"), guide = FALSE) +  # Rojo para negativos, azul para positivos
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Importancia de Variables en SVM (Kernel Lineal)",
+       x = "Variable",
+       y = "Valor del Coeficiente")
+
+
+#######################################################
+##### LASSO
+#######################################################
+
+library(haven)
+library(dplyr)
+datos <- read_dta("C:/Users/Gothics/OneDrive/AI-Dani/dani_modelo2.dta")
+
+if (!requireNamespace("glmnet", quietly = TRUE)) install.packages("glmnet")
+if (!requireNamespace("caret", quietly = TRUE)) install.packages("caret")
+if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
+
+library(glmnet)
+library(caret)
+library(dplyr)
+
+datos$rwg06m <- as.factor(datos$rwg06m)
+
+categoricas <- c("cesarea", "peginergrowth_2", "sexo", "escolaridad_2", "alim3m_2", "nse_2")
+datos[, categoricas] <- lapply(datos[, categoricas], as.factor)
+
+set.seed(123)
+trainIndex <- createDataPartition(datos$rwg06m, p = 0.8, list = FALSE)
+trainData <- datos[trainIndex, ]
+testData <- datos[-trainIndex, ]
+
+x_train <- model.matrix(rwg06m ~ cesarea + peginergrowth_2 + sexo + escolaridad_2 + alim3m_2 + nse_2 + 
+                            imcpregestacional + noembarazos + edadmaterna + se3m + sr3m + ef3m + fr3m, 
+                        data = trainData)[,-1]  # Eliminar la columna de intercepto
+y_train <- trainData$rwg06m
+
+x_test <- model.matrix(rwg06m ~ cesarea + peginergrowth_2 + sexo + escolaridad_2 + alim3m_2 + nse_2 + 
+                           imcpregestacional + noembarazos + edadmaterna + se3m + sr3m + ef3m + fr3m, 
+                       data = testData)[,-1]  # Eliminar la columna de intercepto
+y_test <- testData$rwg06m
+
+
+set.seed(123)
+lasso_model <- cv.glmnet(x_train, y_train, alpha = 1, family = "binomial")
+
+best_lambda <- lasso_model$lambda.min
+
+lasso_final <- glmnet(x_train, y_train, alpha = 1, lambda = best_lambda, family = "binomial")
+
+predicciones <- predict(lasso_final, newx = x_test, type = "response")
+pred_clasificadas <- ifelse(predicciones > 0.5, 1, 0)  # Convertir probabilidades en clases
+
+conf_matrix <- confusionMatrix(factor(pred_clasificadas), factor(y_test))
+print(conf_matrix)
+
+print(paste("Mejor lambda seleccionado:", best_lambda))
+
+if (!requireNamespace("pROC", quietly = TRUE)) install.packages("pROC")
+if (!requireNamespace("caret", quietly = TRUE)) install.packages("caret")
+
+library(pROC)
+library(caret)
+
+conf_matrix <- confusionMatrix(factor(pred_clasificadas), factor(y_test))
+
+accuracy <- conf_matrix$overall["Accuracy"]
+precision <- conf_matrix$byClass["Precision"]
+sensitivity <- conf_matrix$byClass["Sensitivity"]
+specificity <- conf_matrix$byClass["Specificity"]
+f1_score <- conf_matrix$byClass["F1"]
+
+roc_obj <- roc(y_test, as.numeric(pred_clasificadas), levels = c(0, 1), direction = "<")
+auc_value <- auc(roc_obj)
+
+ci_auc <- ci.auc(roc_obj)
+ci_accuracy <- binom.test(conf_matrix$table[1,1] + conf_matrix$table[2,2], sum(conf_matrix$table))$conf.int
+ci_sensitivity <- binom.test(conf_matrix$table[2,2], sum(conf_matrix$table[2,]))$conf.int
+ci_specificity <- binom.test(conf_matrix$table[1,1], sum(conf_matrix$table[1,]))$conf.int
+
+results <- data.frame(
+  Metric = c("AUC", "Accuracy", "Precision", "Sensitivity", "Specificity", "F1 Score"),
+  Value = c(auc_value, accuracy, precision, sensitivity, specificity, f1_score),
+  CI_Lower = c(ci_auc[1], ci_accuracy[1], NA, ci_sensitivity[1], ci_specificity[1], NA),
+  CI_Upper = c(ci_auc[3], ci_accuracy[2], NA, ci_sensitivity[2], ci_specificity[2], NA)
+)
+
+print(results)
+
+coeficientes <- coef(lasso_final)
+
+coef_df <- data.frame(
+  Variable = rownames(coeficientes),
+  Coeficiente = as.numeric(coeficientes)
+)
+
+coef_df_filtrado <- coef_df[coef_df$Coeficiente != 0, ]
+
+print(coef_df_filtrado)
+
+if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
+library(ggplot2)
+
+coeficientes <- coef(lasso_final)
+
+coef_df <- data.frame(
+  Variable = rownames(coeficientes),
+  Coeficiente = as.numeric(coeficientes)
+)
+
+coef_df_filtrado <- coef_df[coef_df$Coeficiente != 0 & coef_df$Variable != "(Intercept)", ]
+
+ggplot(coef_df_filtrado, aes(x = reorder(Variable, Coeficiente), y = Coeficiente, fill = Coeficiente > 0)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("red", "blue"), guide = FALSE) +  # Rojo para negativos, azul para positivos
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Coeficientes Significativos en LASSO (Sin Intercepto)",
+       x = "Variable",
+       y = "Valor del Coeficiente")
+
+
+
+#######################################################
+##### Naive Bayes
+#######################################################
+
+library(haven)
+library(dplyr)
+datos <- read_dta("C:/Users/Gothics/OneDrive/AI-Dani/dani_modelo2.dta")
+
+if (!requireNamespace("e1071", quietly = TRUE)) install.packages("e1071")
+if (!requireNamespace("caret", quietly = TRUE)) install.packages("caret")
+
+library(e1071)
+library(caret)
+
+datos$rwg06m <- as.factor(datos$rwg06m)
+
+categoricas <- c("cesarea", "peginergrowth_2", "sexo", "escolaridad_2", "alim3m_2", "nse_2")
+datos[, categoricas] <- lapply(datos[, categoricas], as.factor)
+
+set.seed(123)
+trainIndex <- createDataPartition(datos$rwg06m, p = 0.8, list = FALSE)
+trainData <- datos[trainIndex, ]
+testData <- datos[-trainIndex, ]
+
+nb_model <- naiveBayes(rwg06m ~ cesarea + peginergrowth_2 + sexo + escolaridad_2 + alim3m_2 + nse_2 + 
+                           imcpregestacional + noembarazos + edadmaterna + se3m + sr3m + ef3m + fr3m,
+                       data = trainData)
+
+predicciones <- predict(nb_model, testData)
+
+conf_matrix <- confusionMatrix(factor(predicciones), factor(testData$rwg06m))
+print(conf_matrix)
+
+if (!requireNamespace("pROC", quietly = TRUE)) install.packages("pROC")
+if (!requireNamespace("caret", quietly = TRUE)) install.packages("caret")
+
+library(pROC)
+library(caret)
+
+conf_matrix <- confusionMatrix(factor(predicciones), factor(testData$rwg06m))
+
+accuracy <- conf_matrix$overall["Accuracy"]
+precision <- conf_matrix$byClass["Precision"]
+sensitivity <- conf_matrix$byClass["Sensitivity"]
+specificity <- conf_matrix$byClass["Specificity"]
+f1_score <- conf_matrix$byClass["F1"]
+
+roc_obj <- roc(testData$rwg06m, as.numeric(predicciones), levels = c(0, 1), direction = "<")
+auc_value <- auc(roc_obj)
+
+ci_auc <- ci.auc(roc_obj)
+ci_accuracy <- binom.test(conf_matrix$table[1,1] + conf_matrix$table[2,2], sum(conf_matrix$table))$conf.int
+ci_sensitivity <- binom.test(conf_matrix$table[2,2], sum(conf_matrix$table[2,]))$conf.int
+ci_specificity <- binom.test(conf_matrix$table[1,1], sum(conf_matrix$table[1,]))$conf.int
+
+results <- data.frame(
+  Metric = c("AUC", "Accuracy", "Precision", "Sensitivity", "Specificity", "F1 Score"),
+  Value = c(auc_value, accuracy, precision, sensitivity, specificity, f1_score),
+  CI_Lower = c(ci_auc[1], ci_accuracy[1], NA, ci_sensitivity[1], ci_specificity[1], NA),
+  CI_Upper = c(ci_auc[3], ci_accuracy[2], NA, ci_sensitivity[2], ci_specificity[2], NA)
+)
+
+print(results)
+
+coeficientes_nb <- nb_model$tables
+print(coeficientes_nb)
+
+library(dplyr)
+coef_df <- bind_rows(lapply(coeficientes_nb, as.data.frame), .id = "Variable")
+
+colnames(coef_df) <- c("Variable", "Nivel", "Clase_0", "Clase_1")
+
+print(coef_df)  # Visualización de coeficientes
+
+library(dplyr)
+library(ggplot2)
+
+coef_df <- coef_df %>% filter(!is.na(Clase_1))
+
+ggplot(coef_df, aes(x = Nivel, y = Clase_1, fill = Variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "Probabilidades Condicionales en Modelo Naive Bayes",
+       x = "Categoría de Variable",
+       y = "Probabilidad Condicional para Clase 1") +
+  coord_flip()
+
+
+library(dplyr)
+library(ggplot2)
+
+coef_df <- coef_df %>% filter(!is.na(Clase_1))
+
+ggplot(coef_df, aes(x = Clase_1, fill = Variable)) +
+  geom_density(alpha = 0.6) +  # Gráfico de densidad con transparencia
+  theme_minimal() +
+  labs(title = "Distribución de Probabilidades Condicionales en Naive Bayes",
+       x = "Probabilidad Condicional para Clase 1",
+       y = "Densidad") +
+  theme(legend.position = "bottom")  # Ubicar la leyenda abajo para mayor claridad
+
+
+#######################################################
+##### GLM log-binomial
+#######################################################
+
+library(haven)
+library(dplyr)
+datos <- read_dta("C:/Users/Gothics/OneDrive/AI-Dani/dani_modelo2.dta")
+
+if (!requireNamespace("stats", quietly = TRUE)) install.packages("stats")
+if (!requireNamespace("caret", quietly = TRUE)) install.packages("caret")
+
+library(stats)
+library(caret)
+
+datos$rwg06m <- as.factor(datos$rwg06m)
+
+categoricas <- c("cesarea", "peginergrowth_2", "sexo", "escolaridad_2", "alim3m_2", "nse_2")
+datos[, categoricas] <- lapply(datos[, categoricas], as.factor)
+
+set.seed(123)
+trainIndex <- createDataPartition(datos$rwg06m, p = 0.8, list = FALSE)
+trainData <- datos[trainIndex, ]
+testData <- datos[-trainIndex, ]
+
+glm_model <- glm(rwg06m ~ cesarea + peginergrowth_2 + sexo + escolaridad_2 + alim3m_2 + nse_2 + 
+                     imcpregestacional + noembarazos + edadmaterna + se3m + sr3m + ef3m + fr3m,
+                 data = trainData, family = binomial(link = "logit"))
+
+
+coeficientes <- coef(glm_model)
+error_estandar <- sqrt(diag(vcov(glm_model)))  # Errores estándar
+
+OR <- exp(coeficientes)  # Transformación exponencial para obtener OR
+IC_lower <- exp(coeficientes - 1.96 * error_estandar)  # Límite inferior IC 95%
+IC_upper <- exp(coeficientes + 1.96 * error_estandar)  # Límite superior IC 95%
+
+valores_p <- summary(glm_model)$coefficients[, "Pr(>|z|)"]
+
+resultados <- data.frame(
+  Variable = names(coeficientes),
+  OR = OR,
+  IC_95_Lower = IC_lower,
+  IC_95_Upper = IC_upper,
+  Valor_p = valores_p
+)
+
+print(resultados)
+
+if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
+library(ggplot2)
+
+resultados_filtrados <- resultados[resultados$Variable != "(Intercept)", ]
+
+ggplot(resultados_filtrados, aes(x = reorder(Variable, OR), y = OR)) +
+  geom_point(size = 4, color = "blue") +  # Puntos para los OR
+  geom_errorbar(aes(ymin = IC_95_Lower, ymax = IC_95_Upper), width = 0.2, color = "black") +  # Barras de IC 95%
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +  # Línea de referencia en OR = 1
+  coord_flip() +  # Voltear el eje para mejor lectura
+  theme_minimal() +
+  labs(title = "Odds Ratios con IC 95% en Modelo GLM (Sin Intercepto)",
+       x = "Variable",
+       y = "Odds Ratio (OR)") +
+  theme(legend.position = "none")  # Ocultar leyenda para mayor simplicidad
+
+
+
+
+
