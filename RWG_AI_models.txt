@@ -1,12 +1,8 @@
-
-
 library(haven)
 library(dplyr)
 datos <- read_dta("C:/Users/Gothics/OneDrive/AI-Dani/dani_modelo2.dta")
 
-#######################################################
 ##### Support Vector Machines with Linear Kernel
-#######################################################
 
 if (!requireNamespace("e1071", quietly = TRUE)) install.packages("e1071")
 if (!requireNamespace("caret", quietly = TRUE)) install.packages("caret")
@@ -90,17 +86,14 @@ coef_df <- coef_df[order(coef_df$Importancia, decreasing = TRUE), ]
 
 ggplot(coef_df, aes(x = reorder(Variable, Importancia), y = Coeficiente, fill = Coeficiente > 0)) +
   geom_bar(stat = "identity") +
-  scale_fill_manual(values = c("red", "blue"), guide = FALSE) +  # Rojo para negativos, azul para positivos
+  scale_fill_manual(values = c("red", "blue"), guide = FALSE) +
   coord_flip() +
   theme_minimal() +
   labs(title = "Importancia de Variables en SVM (Kernel Lineal)",
        x = "Variable",
        y = "Valor del Coeficiente")
 
-
-#######################################################
 ##### LASSO
-#######################################################
 
 library(haven)
 library(dplyr)
@@ -126,12 +119,12 @@ testData <- datos[-trainIndex, ]
 
 x_train <- model.matrix(rwg06m ~ cesarea + peginergrowth_2 + sexo + escolaridad_2 + alim3m_2 + nse_2 + 
                             imcpregestacional + noembarazos + edadmaterna + se3m + sr3m + ef3m + fr3m, 
-                        data = trainData)[,-1]  # Eliminar la columna de intercepto
+                        data = trainData)[,-1]
 y_train <- trainData$rwg06m
 
 x_test <- model.matrix(rwg06m ~ cesarea + peginergrowth_2 + sexo + escolaridad_2 + alim3m_2 + nse_2 + 
                            imcpregestacional + noembarazos + edadmaterna + se3m + sr3m + ef3m + fr3m, 
-                       data = testData)[,-1]  # Eliminar la columna de intercepto
+                       data = testData)[,-1]
 y_test <- testData$rwg06m
 
 
@@ -143,7 +136,7 @@ best_lambda <- lasso_model$lambda.min
 lasso_final <- glmnet(x_train, y_train, alpha = 1, lambda = best_lambda, family = "binomial")
 
 predicciones <- predict(lasso_final, newx = x_test, type = "response")
-pred_clasificadas <- ifelse(predicciones > 0.5, 1, 0)  # Convertir probabilidades en clases
+pred_clasificadas <- ifelse(predicciones > 0.5, 1, 0)
 
 conf_matrix <- confusionMatrix(factor(pred_clasificadas), factor(y_test))
 print(conf_matrix)
@@ -213,11 +206,7 @@ ggplot(coef_df_filtrado, aes(x = reorder(Variable, Coeficiente), y = Coeficiente
        x = "Variable",
        y = "Valor del Coeficiente")
 
-
-
-#######################################################
 ##### Naive Bayes
-#######################################################
 
 library(haven)
 library(dplyr)
@@ -302,7 +291,6 @@ ggplot(coef_df, aes(x = Nivel, y = Clase_1, fill = Variable)) +
        y = "Probabilidad Condicional para Clase 1") +
   coord_flip()
 
-
 library(dplyr)
 library(ggplot2)
 
@@ -314,12 +302,9 @@ ggplot(coef_df, aes(x = Clase_1, fill = Variable)) +
   labs(title = "Distribución de Probabilidades Condicionales en Naive Bayes",
        x = "Probabilidad Condicional para Clase 1",
        y = "Densidad") +
-  theme(legend.position = "bottom")  # Ubicar la leyenda abajo para mayor claridad
+  theme(legend.position = "bottom")  
 
-
-#######################################################
 ##### GLM log-binomial
-#######################################################
 
 library(haven)
 library(dplyr)
@@ -345,13 +330,12 @@ glm_model <- glm(rwg06m ~ cesarea + peginergrowth_2 + sexo + escolaridad_2 + ali
                      imcpregestacional + noembarazos + edadmaterna + se3m + sr3m + ef3m + fr3m,
                  data = trainData, family = binomial(link = "logit"))
 
-
 coeficientes <- coef(glm_model)
-error_estandar <- sqrt(diag(vcov(glm_model)))  # Errores estándar
+error_estandar <- sqrt(diag(vcov(glm_model)))  
 
-OR <- exp(coeficientes)  # Transformación exponencial para obtener OR
-IC_lower <- exp(coeficientes - 1.96 * error_estandar)  # Límite inferior IC 95%
-IC_upper <- exp(coeficientes + 1.96 * error_estandar)  # Límite superior IC 95%
+OR <- exp(coeficientes)  
+IC_lower <- exp(coeficientes - 1.96 * error_estandar)  
+IC_upper <- exp(coeficientes + 1.96 * error_estandar)  
 
 valores_p <- summary(glm_model)$coefficients[, "Pr(>|z|)"]
 
@@ -371,15 +355,15 @@ library(ggplot2)
 resultados_filtrados <- resultados[resultados$Variable != "(Intercept)", ]
 
 ggplot(resultados_filtrados, aes(x = reorder(Variable, OR), y = OR)) +
-  geom_point(size = 4, color = "blue") +  # Puntos para los OR
-  geom_errorbar(aes(ymin = IC_95_Lower, ymax = IC_95_Upper), width = 0.2, color = "black") +  # Barras de IC 95%
+  geom_point(size = 4, color = "blue") +
+  geom_errorbar(aes(ymin = IC_95_Lower, ymax = IC_95_Upper), width = 0.2, color = "black") +
   geom_hline(yintercept = 1, linetype = "dashed", color = "red") +  # Línea de referencia en OR = 1
-  coord_flip() +  # Voltear el eje para mejor lectura
+  coord_flip() +
   theme_minimal() +
   labs(title = "Odds Ratios con IC 95% en Modelo GLM (Sin Intercepto)",
        x = "Variable",
        y = "Odds Ratio (OR)") +
-  theme(legend.position = "none")  # Ocultar leyenda para mayor simplicidad
+  theme(legend.position = "none")
 
 
 
