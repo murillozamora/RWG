@@ -297,7 +297,7 @@ library(ggplot2)
 coef_df <- coef_df %>% filter(!is.na(Clase_1))
 
 ggplot(coef_df, aes(x = Clase_1, fill = Variable)) +
-  geom_density(alpha = 0.6) +  # Gráfico de densidad con transparencia
+  geom_density(alpha = 0.6) +
   theme_minimal() +
   labs(title = "Distribución de Probabilidades Condicionales en Naive Bayes",
        x = "Probabilidad Condicional para Clase 1",
@@ -357,13 +357,14 @@ resultados_filtrados <- resultados[resultados$Variable != "(Intercept)", ]
 ggplot(resultados_filtrados, aes(x = reorder(Variable, OR), y = OR)) +
   geom_point(size = 4, color = "blue") +
   geom_errorbar(aes(ymin = IC_95_Lower, ymax = IC_95_Upper), width = 0.2, color = "black") +
-  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +  # Línea de referencia en OR = 1
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
   coord_flip() +
   theme_minimal() +
   labs(title = "Odds Ratios con IC 95% en Modelo GLM (Sin Intercepto)",
        x = "Variable",
        y = "Odds Ratio (OR)") +
   theme(legend.position = "none")
+
 
 
 
