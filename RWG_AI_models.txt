@@ -199,7 +199,7 @@ coef_df_filtrado <- coef_df[coef_df$Coeficiente != 0 & coef_df$Variable != "(Int
 
 ggplot(coef_df_filtrado, aes(x = reorder(Variable, Coeficiente), y = Coeficiente, fill = Coeficiente > 0)) +
   geom_bar(stat = "identity") +
-  scale_fill_manual(values = c("red", "blue"), guide = FALSE) +  # Rojo para negativos, azul para positivos
+  scale_fill_manual(values = c("red", "blue"), guide = FALSE) +
   coord_flip() +
   theme_minimal() +
   labs(title = "Coeficientes Significativos en LASSO (Sin Intercepto)",
@@ -364,6 +364,7 @@ ggplot(resultados_filtrados, aes(x = reorder(Variable, OR), y = OR)) +
        x = "Variable",
        y = "Odds Ratio (OR)") +
   theme(legend.position = "none")
+
 
 
 
